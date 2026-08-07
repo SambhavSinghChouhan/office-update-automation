@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Office Update Automation</title>
+
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>Office Update Automation</h1>
+
+    <div class="card">
+
+    <h2>Current Ticket</h2>
+
+    <input
+        type="text"
+        id="ticket"
+    >
+
+    <br><br>
+
+    <button id="ticketBtn">
+        Save Ticket
+    </button>
+
+</div>
+
+    <div class="card">
+
+        <h2>Clock In</h2>
+
+        <input
+            type="time"
+            id="clockIn"
+        >
+
+        <button id="clockInBtn">
+            Clock In
+        </button>
+
+    </div>
+
+    <div class="card">
+
+        <h2>Today's Update</h2>
+
+        <label>Clock Out</label>
+
+        <input
+            type="time"
+            id="clockOut"
+        >
+
+        <br><br>
+
+        <label>
+            <input
+                type="checkbox"
+                id="sprint"
+            >
+            Sprint Release
+        </label>
+
+        <br><br>
+
+        <label>Sprint Clock In</label>
+
+        <input
+            type="time"
+            id="sprintIn"
+        >
+
+        <br><br>
+
+        <label>Sprint Clock Out</label>
+
+        <input
+            type="time"
+            id="sprintOut"
+        >
+
+        <br><br>
+
+        <label>ChatGPT Share URL</label>
+
+        <input
+            type="text"
+            id="chatUrl"
+            placeholder="Paste ChatGPT Share URL"
+        >
+
+        <br><br>
+
+        <button id="saveBtn">
+            Save Update
+        </button>
+
+    </div>
+
+</div>
+
+<script type="module" src="js/app.js"></script>
+
+</body>
+</html>

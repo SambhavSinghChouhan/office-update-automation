@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+
+  "name": "Office Update Automation",
+
+  "description": "Generate Office Updates from ChatGPT",
+
+  "version": "1.0",
+
+  "permissions": [
+  "activeTab",
+  "storage",
+  "scripting",
+  "downloads"
+],
+
+
+  "host_permissions": [
+  "https://chatgpt.com/*",
+  "https://office-update-worker.sambhavsingh8034.workers.dev/*"
+],
+
+  "action": {
+    "default_popup": "popup.html"
+  },
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*"
+      ],
+      "js": [
+        "content.js"
+      ]
+    }
+  ]
+}
