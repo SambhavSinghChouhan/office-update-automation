@@ -232,11 +232,24 @@ jobs:
 
       - name: Prepare protected resources and versioned frontend bucket for deletion
         working-directory: terraform/environments/dev
-        run: >-
-          terraform apply -input=false -auto-approve -lock-timeout=5m
-          -target=module.sessions.aws_dynamodb_table.sessions
-          -target=module.authentication.aws_cognito_user_pool.app
-          -target=module.frontend_bucket.aws_s3_bucket.frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          state_resources="$(terraform state list)"
+          targets=()
+          for target in \
+            module.sessions.aws_dynamodb_table.sessions \
+            module.authentication.aws_cognito_user_pool.app \
+            module.frontend_bucket.aws_s3_bucket.frontend; do
+            if grep -Fxq "$target" <<< "$state_resources"; then
+              targets+=("-target=$target")
+            fi
+          done
+          if ((${#targets[@]} > 0)); then
+            terraform apply -input=false -auto-approve -lock-timeout=5m "${targets[@]}"
+          else
+            echo "No tracked protected resources require a preparatory apply."
+          fi
 
       - name: Create final destroy plan
         working-directory: terraform/environments/dev
