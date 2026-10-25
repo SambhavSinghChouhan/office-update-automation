@@ -1,6 +1,6 @@
 # AWS Terraform infrastructure
 
-This directory contains the reusable AWS infrastructure foundation for the work-update application. The Cloudflare application remains untouched. The Lambda functions are provisioned from deployment ZIPs in a private S3 artifacts bucket; application handlers and application packaging/deployment remain a later phase.
+This directory contains reusable AWS infrastructure for the work-update application. The Cloudflare application remains untouched. Lambda deployment ZIPs are built from `application/lambda/` and uploaded to the private artifacts bucket by the manual GitHub Actions workflow before planning.
 
 ## Layout
 
@@ -53,15 +53,15 @@ To add another environment, use the same `environments/dev` composition as a thi
 
 ### Lambda artifact order
 
-This repository does not yet contain AWS Lambda handler packages. Do not invent or deploy placeholder handlers. Once application code and packaging workflows exist, upload ZIPs to the bootstrap artifact bucket using the keys configured in `terraform.tfvars`, then apply the main environment. Each ZIP must contain the configured Node.js handler entry point. The bootstrap role grants the repository deployment role read access to those artifacts; use an environment-specific prefix in each key.
+The AWS handlers live in `application/lambda/`. The Terraform workflow runs `npm ci`, creates ZIPs containing the configured Node.js handler entry points and dependencies, and uploads them to the bootstrap artifact bucket before planning. The standalone Deploy application workflow uses those same artifacts to update Lambda code after infrastructure exists.
 
 ## GitHub Actions workflow and repository secrets
 
-`.github/workflows/terraform.yaml` runs only through manual `workflow_dispatch`. It runs format, init, validate, and plan; selecting `apply` applies the saved plan and is restricted to `main`. GitHub Actions OIDC supplies short-lived credentials. No AWS access keys are used.
+`.github/workflows/terraform.yaml` runs only through manual `workflow_dispatch`. It packages Lambda code, runs format/init/validate/plan, and selecting `apply` applies the saved infrastructure plan. Apply is restricted to `main`. GitHub Actions OIDC supplies short-lived credentials. No AWS access keys are used. Once the stack exists, run `.github/workflows/deploy-app.yaml` to deploy application code and frontend independently of Terraform changes.
 
 Selecting `destroy` requires the exact `DESTROY DEV` confirmation. The workflow first previews destruction, disables DynamoDB and Cognito deletion protection, then plans and applies the final destroy. It removes the dev application stack, including frontend objects and application resources. Secrets Manager secrets enter their configured recovery window. The bootstrap state/artifact buckets, GitHub deployment role, and OIDC provider are intentionally retained so Terraform state remains available and the stack can be redeployed.
 
-Configure these GitHub Actions repository secrets before running the workflow:
+The Terraform workflow needs these repository secrets:
 
 | Secret | Value |
 |---|---|
@@ -71,13 +71,22 @@ Configure these GitHub Actions repository secrets before running the workflow:
 
 The workflow keeps region (`ap-south-1`), environment (`dev`), naming prefix, timezone (`Asia/Kolkata`), and log retention (`30` days) in code. Frontend and artifact bucket names are built from the coded prefix/region and `AWS_ACCOUNT_ID`, so they stay account-specific without additional secrets. Update those workflow values directly if this deployment configuration changes.
 
+After the Terraform stack has been applied, the manually dispatched **Deploy application** workflow requires two additional GitHub Actions repository secrets:
+
+| Secret | Value |
+|---|---|
+| `GEMINI_API_KEY` | Gemini API key |
+| `TEAMS_WEBHOOK_URL` | Existing Microsoft Teams webhook URL |
+
+That workflow reads the Terraform outputs from the configured state bucket, updates the two Lambda function code packages, writes the integration credentials to Secrets Manager, publishes the static frontend, and invalidates CloudFront. It does not run Terraform apply or create infrastructure. Use the same deployment role OIDC secret as the Terraform workflow.
+
 The bootstrap role trust must match the workflow's repository and `main` branch. The role and policy need to be updated by running bootstrap after the state-bucket additions, before the workflow can initialize remote state.
 
 The deployment role trusts only the configured repository subject(s) and `sts.amazonaws.com` audience. Configure the GitHub workflow to request `id-token: write` and assume the role with `aws-actions/configure-aws-credentials`; the AWS credentials are short-lived. The workflow reads the account ID, role ARN, and state bucket name from GitHub Actions secrets. No permanent AWS access keys belong in GitHub.
 
 The optional `deployment_role_arn` provider variable is for local `terraform plan` runs that use an AWS CLI/SSO identity allowed to assume that role. The local-only `environments/dev/terraform.tfvars` contains the role ARN you supplied and is ignored by Git. An OIDC-only role may not trust a local identity, so local assumption can fail even when GitHub OIDC works. In GitHub Actions, pass the same role ARN to `aws-actions/configure-aws-credentials` (a GitHub Actions variable is sufficient; it is not a credential). The account-local OIDC provider ARN is a different identifier and is created/reused by bootstrap.
 
-The main Terraform creates empty Secrets Manager secret containers for Gemini and Teams. To honor repository-secret based setup without putting values in Terraform state, a later workflow can read GitHub Actions secrets (for example `GEMINI_API_KEY` and `TEAMS_WEBHOOK_URL`) and call `PutSecretValue` using the OIDC role. The role is limited to secret names under this application's prefix. Secret values are never Terraform variables or outputs. Do not print them in workflow logs.
+The main Terraform creates empty Secrets Manager secret containers for Gemini and Teams. The Deploy application workflow reads GitHub Actions secrets (`GEMINI_API_KEY` and `TEAMS_WEBHOOK_URL`) and calls `PutSecretValue` using the OIDC role. The role is limited to secret names under this application's prefix. Secret values are never Terraform variables or outputs. Do not print them in workflow logs.
 
 The GitHub deployment policy is intentionally limited by project/environment resource name prefixes where AWS supports resource-level IAM. CloudFront has global APIs requiring `Resource = "*"`, and API Gateway/Cognito resource identifiers do not provide a reliable human-name boundary in this policy. Use separate AWS accounts for strong dev/prod isolation. Review the final policy against the actual CI deployment commands before enabling apply.
 
@@ -85,7 +94,7 @@ The GitHub deployment policy is intentionally limited by project/environment res
 
 CloudFront serves a private S3 bucket through Origin Access Control. Cognito user-pool JWT authorization protects every HTTP API route. API Gateway invokes a session Lambda; EventBridge Scheduler invokes a report processor at a supplied clock-out and at 00:30 in the configured IANA timezone. DynamoDB is the state authority; schedule versions and conditional processor leases are expected application behavior. Secrets Manager stores external credentials. Lambda is not attached to a VPC because the current integrations require public HTTPS egress and AWS service APIs only; avoiding a VPC avoids an unjustified NAT Gateway. Add networking only if a private dependency is introduced.
 
-The session table and IAM resources are provisioned, but actual validation, duration calculation, retrieval, Gemini calls, Teams delivery, idempotency state transitions, and safe retry code require the application migration phase. A Teams webhook does not guarantee exactly-once delivery after an ambiguous timeout.
+The AWS handlers validate and persist session data, calculate durations, manage versioned schedules, and run Gemini/Teams processing. The session table enables TTL using `expiresAt`: completed and safely failed records expire one year later, while active and ambiguous-delivery records remain until resolved. TTL is asynchronous cleanup only; scheduling depends on EventBridge and conditional session state. ChatGPT shared-link retrieval is not implemented because the legacy Worker only fetched an HTML preview; the AWS frontend requires pasted transcript text and never generates from the URL alone. A Teams webhook does not guarantee exactly-once delivery after an ambiguous timeout. Automatic replay is blocked; the user can confirm delivery after checking Teams or explicitly retry with a duplicate warning.
 
 ## Costs and lifecycle
 

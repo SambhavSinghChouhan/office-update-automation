@@ -102,6 +102,11 @@ data "aws_iam_policy_document" "scheduler_trust" {
       variable = "aws:SourceAccount"
       values   = [var.account_id]
     }
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:SourceArn"
+      values   = [var.schedule_group_resource_arn]
+    }
   }
 }
 

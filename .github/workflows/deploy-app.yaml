@@ -1,0 +1,135 @@
+name: Deploy application
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-${{ github.repository }}-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy code to the existing dev stack
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ap-south-1
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+      ARTIFACT_BUCKET: office-update-dev-${{ secrets.AWS_ACCOUNT_ID }}-ap-south-1-artifacts
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Require configured AWS and integration secrets
+        run: |
+          for name in AWS_ACCOUNT_ID TF_STATE_BUCKET GEMINI_API_KEY TEAMS_WEBHOOK_URL; do
+            if [ -z "${!name}" ]; then
+              echo "Required GitHub Actions secret is missing: $name"
+              exit 1
+            fi
+          done
+
+      - name: Configure AWS credentials with GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.OIDC }}
+          aws-region: ap-south-1
+
+      - name: Verify target AWS account
+        run: |
+          actual_account="$(aws sts get-caller-identity --query Account --output text)"
+          if [ "$actual_account" != "$AWS_ACCOUNT_ID" ]; then
+            echo "OIDC role resolved to an unexpected AWS account."
+            exit 1
+          fi
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.5"
+
+      - name: Read deployed stack outputs
+        working-directory: terraform/environments/dev
+        run: |
+          terraform init -input=false -reconfigure \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=${AWS_ACCOUNT_ID}/dev/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="use_lockfile=true" \
+            -backend-config="encrypt=true"
+          terraform output -json > "${RUNNER_TEMP}/stack-outputs.json"
+          distribution_id="$(jq -r '.cloudfront_distribution_id.value' "${RUNNER_TEMP}/stack-outputs.json")"
+          session_lambda="$(jq -r '.lambda_function_names.value.session_api' "${RUNNER_TEMP}/stack-outputs.json")"
+          processor_lambda="$(jq -r '.lambda_function_names.value.report_processor' "${RUNNER_TEMP}/stack-outputs.json")"
+          frontend_bucket="$(jq -r '.frontend_bucket_name.value' "${RUNNER_TEMP}/stack-outputs.json")"
+          api_endpoint="$(jq -r '.api_endpoint.value' "${RUNNER_TEMP}/stack-outputs.json")"
+          cognito_client_id="$(jq -r '.cognito_user_pool_client_id.value' "${RUNNER_TEMP}/stack-outputs.json")"
+          cognito_domain="$(jq -r '.cognito_hosted_ui_domain.value' "${RUNNER_TEMP}/stack-outputs.json")"
+          gemini_secret_arn="$(jq -r '.integration_secret_arns.value[0]' "${RUNNER_TEMP}/stack-outputs.json")"
+          teams_secret_arn="$(jq -r '.integration_secret_arns.value[1]' "${RUNNER_TEMP}/stack-outputs.json")"
+          for output_value in "$distribution_id" "$session_lambda" "$processor_lambda" "$frontend_bucket" "$api_endpoint" "$cognito_client_id" "$cognito_domain" "$gemini_secret_arn" "$teams_secret_arn"; do
+            if [ -z "$output_value" ] || [ "$output_value" = "null" ]; then
+              echo "Terraform outputs are missing. Deploy the infrastructure stack first and configure its Cognito domain."
+              exit 1
+            fi
+          done
+          {
+            echo "DISTRIBUTION_ID=$distribution_id"
+            echo "SESSION_LAMBDA=$session_lambda"
+            echo "PROCESSOR_LAMBDA=$processor_lambda"
+            echo "FRONTEND_BUCKET=$frontend_bucket"
+            echo "API_ENDPOINT=$api_endpoint"
+            echo "COGNITO_CLIENT_ID=$cognito_client_id"
+            echo "COGNITO_DOMAIN=$cognito_domain"
+            echo "GEMINI_SECRET_ARN=$gemini_secret_arn"
+            echo "TEAMS_SECRET_ARN=$teams_secret_arn"
+          } >> "$GITHUB_ENV"
+
+      - name: Build and upload Lambda packages
+        working-directory: application/lambda
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          node --check src/session.js
+          node --check src/processor.js
+          node --check ../../js/app.js
+          node --check ../../js/api.js
+          package_dir="${RUNNER_TEMP}/office-update-lambda"
+          mkdir -p "$package_dir"
+          find package.json package-lock.json src node_modules -exec touch -h -t 198001010000 {} +
+          zip -X -rq "$package_dir/session-api.zip" package.json package-lock.json node_modules src
+          cp "$package_dir/session-api.zip" "$package_dir/report-processor.zip"
+          aws s3 cp "$package_dir/session-api.zip" "s3://${ARTIFACT_BUCKET}/dev/session-api.zip" --only-show-errors
+          aws s3 cp "$package_dir/report-processor.zip" "s3://${ARTIFACT_BUCKET}/dev/report-processor.zip" --only-show-errors
+
+      - name: Deploy Lambda code
+        run: |
+          aws lambda update-function-code --function-name "$SESSION_LAMBDA" --s3-bucket "$ARTIFACT_BUCKET" --s3-key dev/session-api.zip --query FunctionArn --output text >/dev/null
+          aws lambda wait function-updated --function-name "$SESSION_LAMBDA"
+          aws lambda update-function-code --function-name "$PROCESSOR_LAMBDA" --s3-bucket "$ARTIFACT_BUCKET" --s3-key dev/report-processor.zip --query FunctionArn --output text >/dev/null
+          aws lambda wait function-updated --function-name "$PROCESSOR_LAMBDA"
+
+      - name: Update integration secrets
+        run: |
+          aws secretsmanager put-secret-value --secret-id "$GEMINI_SECRET_ARN" --secret-string "$GEMINI_API_KEY" --query VersionId --output text >/dev/null
+          aws secretsmanager put-secret-value --secret-id "$TEAMS_SECRET_ARN" --secret-string "$TEAMS_WEBHOOK_URL" --query VersionId --output text >/dev/null
+
+      - name: Publish static frontend
+        run: |
+          config="$(jq -cn --arg api "$API_ENDPOINT" --arg client "$COGNITO_CLIENT_ID" --arg domain "$COGNITO_DOMAIN" '{apiBaseUrl:$api,cognitoClientId:$client,cognitoDomain:$domain,timezone:"Asia/Kolkata"}')"
+          printf 'window.APP_CONFIG = %s;\n' "$config" > js/config.js
+          aws s3 cp index.html "s3://${FRONTEND_BUCKET}/index.html" --content-type "text/html; charset=utf-8" --cache-control "no-cache" --only-show-errors
+          aws s3 cp css/style.css "s3://${FRONTEND_BUCKET}/css/style.css" --content-type "text/css; charset=utf-8" --cache-control "public,max-age=300" --only-show-errors
+          aws s3 cp js/app.js "s3://${FRONTEND_BUCKET}/js/app.js" --content-type "text/javascript; charset=utf-8" --cache-control "public,max-age=300" --only-show-errors
+          aws s3 cp js/api.js "s3://${FRONTEND_BUCKET}/js/api.js" --content-type "text/javascript; charset=utf-8" --cache-control "public,max-age=300" --only-show-errors
+          aws s3 cp js/config.js "s3://${FRONTEND_BUCKET}/js/config.js" --content-type "text/javascript; charset=utf-8" --cache-control "no-cache" --only-show-errors
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/index.html" "/js/*" "/css/*" >/dev/null

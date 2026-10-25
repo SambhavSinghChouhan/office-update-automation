@@ -1,111 +1,53 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Office Update Automation</title>
-
-    <link rel="stylesheet" href="css/style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7fb">
+  <title>Work Update</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/config.js"></script>
 </head>
-
 <body>
+  <main class="container">
+    <header class="topbar">
+      <div><p class="eyebrow">PERSONAL WORK SESSION</p><h1>Work Update</h1></div>
+      <div id="accountActions" class="account-actions"><button id="signInBtn" class="secondary">Sign in</button><button id="signOutBtn" class="secondary hidden">Sign out</button></div>
+    </header>
 
-<div class="container">
+    <div id="notice" class="notice hidden" role="status" aria-live="polite"></div>
+    <section id="authPanel" class="card auth-card"><h2>Sign in to continue</h2><p>Your session information is available only to your authenticated account.</p><button id="authPanelSignIn" class="primary">Sign in with Cognito</button></section>
 
-    <h1>Office Update Automation</h1>
+    <form id="sessionForm" class="hidden">
+      <section class="card">
+        <div class="section-heading"><div><p class="eyebrow">SESSION</p><h2>Work hours</h2></div><span id="sessionStatus" class="status">Not loaded</span></div>
+        <div class="field-grid">
+          <label>Work date<input id="workDate" type="date" required></label>
+          <label>Clock-in<input id="clockIn" type="datetime-local" required></label>
+          <label>Clock-out <span class="optional">optional</span><input id="clockOut" type="datetime-local"></label>
+          <label class="check-field"><input id="sprintEnabled" type="checkbox"><span>Track sprint hours</span></label>
+          <label id="sprintInWrap" class="hidden">Sprint clock-in<input id="sprintIn" type="datetime-local"></label>
+          <label id="sprintOutWrap" class="hidden">Sprint clock-out<input id="sprintOut" type="datetime-local"></label>
+        </div>
+        <p class="hint">Times use <span id="timezoneLabel">Asia/Kolkata</span>. Leave clock-out empty to use the 00:30 fallback; it records midnight at the end of your selected work date.</p>
+      </section>
 
-    <div class="card">
+      <section class="card">
+        <p class="eyebrow">WORK CONTEXT</p><h2>Work details</h2>
+        <label>Ticket or work item <span class="optional">optional</span><input id="ticketReference" type="text" maxlength="200" placeholder="e.g. OPS-123"></label>
+        <label>ChatGPT conversation URL<input id="conversationUrl" type="url" required placeholder="https://chatgpt.com/share/…"></label>
+        <label>Paste conversation transcript<textarea id="conversationText" rows="8" maxlength="100000" placeholder="Paste the relevant conversation text here. The shared URL alone cannot be used to retrieve the conversation."></textarea></label>
+        <p class="hint">The URL is saved as a reference. Report generation uses the transcript you paste; missing transcript content stops processing without sending a report.</p>
+      </section>
 
-    <h2>Current Ticket</h2>
-
-    <input
-        type="text"
-        id="ticket"
-    >
-
-    <br><br>
-
-    <button id="ticketBtn">
-        Save Ticket
-    </button>
-
-</div>
-
-    <div class="card">
-
-        <h2>Clock In</h2>
-
-        <input
-            type="time"
-            id="clockIn"
-        >
-
-        <button id="clockInBtn">
-            Clock In
-        </button>
-
-    </div>
-
-    <div class="card">
-
-        <h2>Today's Update</h2>
-
-        <label>Clock Out</label>
-
-        <input
-            type="time"
-            id="clockOut"
-        >
-
-        <br><br>
-
-        <label>
-            <input
-                type="checkbox"
-                id="sprint"
-            >
-            Sprint Release
-        </label>
-
-        <br><br>
-
-        <label>Sprint Clock In</label>
-
-        <input
-            type="time"
-            id="sprintIn"
-        >
-
-        <br><br>
-
-        <label>Sprint Clock Out</label>
-
-        <input
-            type="time"
-            id="sprintOut"
-        >
-
-        <br><br>
-
-        <label>ChatGPT Share URL</label>
-
-        <input
-            type="text"
-            id="chatUrl"
-            placeholder="Paste ChatGPT Share URL"
-        >
-
-        <br><br>
-
-        <button id="saveBtn">
-            Save Update
-        </button>
-
-    </div>
-
-</div>
-
-<script type="module" src="js/app.js"></script>
-
+      <section class="card status-card">
+        <div class="section-heading"><div><p class="eyebrow">AUTOMATION</p><h2>Processing status</h2></div><button id="refreshBtn" class="secondary" type="button">Refresh</button></div>
+        <dl id="statusDetails" class="status-details"><div><dt>Status</dt><dd>—</dd></div></dl>
+        <button id="confirmDeliveredBtn" class="secondary hidden" type="button">Confirm it was delivered</button>
+      </section>
+      <div class="form-actions"><button id="saveBtn" class="primary" type="submit">Save session</button><button id="retryBtn" class="secondary hidden" type="button">Retry processing</button><p id="saveHint" class="hint"></p></div>
+    </form>
+  </main>
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>

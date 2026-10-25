@@ -1,57 +1,17 @@
-const API = "https://office-update-worker.sambhavsingh8034.workers.dev";
+const config = window.APP_CONFIG || {};
 
-export async function health() {
-    const res = await fetch(`${API}/health`);
-    return await res.json();
-}
-
-export async function getConfig() {
-    const res = await fetch(`${API}/config`);
-    return await res.json();
-}
-
-export async function getToday() {
-    const res = await fetch(`${API}/today`);
-    return await res.json();
-}
-
-
-export async function saveTicket(ticket_name) {
-    const res = await fetch(`${API}/ticket`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-            ticket_name
-        })
-    });
-
-    return await res.json();
-}
-
-export async function clockIn(clock_in) {
-    const res = await fetch(`${API}/clockin`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-            clock_in
-        })
-    });
-
-    return await res.json();
-}
-
-export async function saveUpdate(data) {
-    const res = await fetch(`${API}/update`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(data)
-    });
-
-    return await res.json();
+export async function apiRequest(path, options = {}) {
+  if (!config.apiBaseUrl) throw new Error("The application API endpoint is not configured yet.");
+  const idToken = sessionStorage.getItem("workUpdateIdToken");
+  const response = await fetch(`${config.apiBaseUrl.replace(/\/$/, "")}${path}`, {
+    ...options,
+    headers: { authorization: `Bearer ${idToken || ""}`, "content-type": "application/json", ...(options.headers || {}) }
+  });
+  let data = {};
+  try { data = await response.json(); } catch { /* non-JSON gateway response */ }
+  if (!response.ok) {
+    if (response.status === 401) { sessionStorage.removeItem("workUpdateIdToken"); sessionStorage.removeItem("workUpdateTokenExpiry"); }
+    throw new Error(data.error || `Request failed (${response.status}).`);
+  }
+  return data;
 }

@@ -1,0 +1,14 @@
+{
+  "name": "office-update-lambda",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": { "test": "node --test test/*.test.js" },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.850.0",
+    "@aws-sdk/client-scheduler": "^3.850.0",
+    "@aws-sdk/client-secrets-manager": "^3.850.0",
+    "@aws-sdk/lib-dynamodb": "^3.850.0"
+  }
+}

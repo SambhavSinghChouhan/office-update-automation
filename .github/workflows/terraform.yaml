@@ -43,6 +43,7 @@ jobs:
       TF_VAR_name_prefix: office-update-dev
       TF_VAR_frontend_bucket_name: office-update-dev-${{ secrets.AWS_ACCOUNT_ID }}-ap-south-1-frontend
       TF_VAR_lambda_artifact_bucket_name: office-update-dev-${{ secrets.AWS_ACCOUNT_ID }}-ap-south-1-artifacts
+      TF_VAR_cognito_domain_prefix: office-update-dev-${{ secrets.AWS_ACCOUNT_ID }}
       TF_VAR_timezone: Asia/Kolkata
       TF_VAR_log_retention_days: "30"
     steps:
@@ -59,6 +60,27 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.10.5"
+
+      - name: Build and upload Lambda packages
+        if: inputs.action != 'destroy'
+        working-directory: application/lambda
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          node --check src/session.js
+          node --check src/processor.js
+          node --check ../../js/app.js
+          node --check ../../js/api.js
+          package_dir="${RUNNER_TEMP}/office-update-lambda"
+          mkdir -p "$package_dir"
+          find package.json package-lock.json src node_modules -exec touch -h -t 198001010000 {} +
+          zip -X -rq "$package_dir/session-api.zip" package.json package-lock.json node_modules src
+          cp "$package_dir/session-api.zip" "$package_dir/report-processor.zip"
+          session_hash="$(openssl dgst -sha256 -binary "$package_dir/session-api.zip" | openssl base64 -A)"
+          processor_hash="$(openssl dgst -sha256 -binary "$package_dir/report-processor.zip" | openssl base64 -A)"
+          echo "TF_VAR_lambda_artifact_hashes={\"session_api\":\"${session_hash}\",\"report_processor\":\"${processor_hash}\"}" >> "$GITHUB_ENV"
+          aws s3 cp "$package_dir/session-api.zip" "s3://${TF_VAR_lambda_artifact_bucket_name}/dev/session-api.zip" --only-show-errors
+          aws s3 cp "$package_dir/report-processor.zip" "s3://${TF_VAR_lambda_artifact_bucket_name}/dev/report-processor.zip" --only-show-errors
 
       - name: Check Terraform formatting
         run: terraform fmt -check -recursive terraform
@@ -122,6 +144,7 @@ jobs:
       TF_VAR_name_prefix: office-update-dev
       TF_VAR_frontend_bucket_name: office-update-dev-${{ secrets.AWS_ACCOUNT_ID }}-ap-south-1-frontend
       TF_VAR_lambda_artifact_bucket_name: office-update-dev-${{ secrets.AWS_ACCOUNT_ID }}-ap-south-1-artifacts
+      TF_VAR_cognito_domain_prefix: office-update-dev-${{ secrets.AWS_ACCOUNT_ID }}
       TF_VAR_timezone: Asia/Kolkata
       TF_VAR_log_retention_days: "30"
     steps:
@@ -180,6 +203,7 @@ jobs:
       TF_VAR_frontend_bucket_name: office-update-dev-${{ secrets.AWS_ACCOUNT_ID }}-ap-south-1-frontend
       TF_VAR_frontend_bucket_force_destroy: "true"
       TF_VAR_lambda_artifact_bucket_name: office-update-dev-${{ secrets.AWS_ACCOUNT_ID }}-ap-south-1-artifacts
+      TF_VAR_cognito_domain_prefix: office-update-dev-${{ secrets.AWS_ACCOUNT_ID }}
       TF_VAR_timezone: Asia/Kolkata
       TF_VAR_log_retention_days: "30"
       TF_VAR_dynamodb_deletion_protection_enabled: "false"

@@ -33,6 +33,10 @@ resource "aws_dynamodb_table" "sessions" {
   point_in_time_recovery {
     enabled = var.point_in_time_recovery_enabled
   }
+  ttl {
+    attribute_name = "expiresAt"
+    enabled        = true
+  }
   server_side_encryption {
     enabled = true
   }

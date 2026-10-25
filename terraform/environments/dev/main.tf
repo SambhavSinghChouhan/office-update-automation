@@ -4,13 +4,14 @@ locals {
     Environment = var.environment
     ManagedBy   = "Terraform"
   }
-  schedule_group_name  = "${var.name_prefix}-schedules"
-  schedule_group_arn   = "arn:${data.aws_partition.current.partition}:scheduler:${var.aws_region}:${var.aws_account_id}:schedule/${local.schedule_group_name}/*"
-  secret_base_name     = var.name_prefix
-  processor_lambda_arn = "arn:${data.aws_partition.current.partition}:lambda:${var.aws_region}:${var.aws_account_id}:function:${var.name_prefix}-report_processor"
+  schedule_group_name         = "${var.name_prefix}-schedules"
+  schedule_group_arn          = "arn:${data.aws_partition.current.partition}:scheduler:${var.aws_region}:${var.aws_account_id}:schedule/${local.schedule_group_name}/*"
+  schedule_group_resource_arn = "arn:${data.aws_partition.current.partition}:scheduler:${var.aws_region}:${var.aws_account_id}:schedule-group/${local.schedule_group_name}"
+  secret_base_name            = var.name_prefix
+  processor_lambda_arn        = "arn:${data.aws_partition.current.partition}:lambda:${var.aws_region}:${var.aws_account_id}:function:${var.name_prefix}-report_processor"
   functions = {
     session_api = {
-      description       = "Authenticated work-session API; handler is supplied by the application package."
+      description       = "Authenticated API for personal work sessions."
       runtime           = "nodejs22.x"
       handler           = "src/session.handler"
       s3_key            = var.lambda_artifact_keys["session_api"]
@@ -19,15 +20,16 @@ locals {
       memory_size       = 256
       timeout           = 20
       environment_variables = {
-        SESSION_TABLE_NAME   = module.sessions.table_name
-        SCHEDULE_GROUP_NAME  = local.schedule_group_name
-        SCHEDULER_ROLE_ARN   = module.runtime_iam.scheduler_role_arn
-        REPORT_PROCESSOR_ARN = local.processor_lambda_arn
-        TIMEZONE             = var.timezone
+        SESSION_TABLE_NAME     = module.sessions.table_name
+        SCHEDULE_GROUP_NAME    = local.schedule_group_name
+        SCHEDULER_ROLE_ARN     = module.runtime_iam.scheduler_role_arn
+        REPORT_PROCESSOR_ARN   = local.processor_lambda_arn
+        TIMEZONE               = var.timezone
+        SESSION_RETENTION_DAYS = tostring(var.session_retention_days)
       }
     }
     report_processor = {
-      description       = "Scheduled report generation and fallback processor; handler is supplied by the application package."
+      description       = "Scheduled work-report generation, Teams delivery, and fallback recovery."
       runtime           = "nodejs22.x"
       handler           = "src/processor.handler"
       s3_key            = var.lambda_artifact_keys["report_processor"]
@@ -36,10 +38,11 @@ locals {
       memory_size       = 512
       timeout           = 120
       environment_variables = {
-        SESSION_TABLE_NAME = module.sessions.table_name
-        GEMINI_SECRET_ARN  = module.integration_secrets.gemini_secret_arn
-        TEAMS_SECRET_ARN   = module.integration_secrets.teams_secret_arn
-        TIMEZONE           = var.timezone
+        SESSION_TABLE_NAME     = module.sessions.table_name
+        GEMINI_SECRET_ARN      = module.integration_secrets.gemini_secret_arn
+        TEAMS_SECRET_ARN       = module.integration_secrets.teams_secret_arn
+        TIMEZONE               = var.timezone
+        SESSION_RETENTION_DAYS = tostring(var.session_retention_days)
       }
     }
   }
@@ -82,16 +85,17 @@ module "integration_secrets" {
 }
 
 module "runtime_iam" {
-  source                  = "../../modules/iam"
-  name_prefix             = var.name_prefix
-  region                  = var.aws_region
-  account_id              = var.aws_account_id
-  partition               = data.aws_partition.current.partition
-  table_arn               = module.sessions.table_arn
-  table_index_arn         = module.sessions.table_index_arn
-  integration_secret_arns = module.integration_secrets.secret_arns
-  schedule_group_arn      = local.schedule_group_arn
-  tags                    = local.tags
+  source                      = "../../modules/iam"
+  name_prefix                 = var.name_prefix
+  region                      = var.aws_region
+  account_id                  = var.aws_account_id
+  partition                   = data.aws_partition.current.partition
+  table_arn                   = module.sessions.table_arn
+  table_index_arn             = module.sessions.table_index_arn
+  integration_secret_arns     = module.integration_secrets.secret_arns
+  schedule_group_arn          = local.schedule_group_arn
+  schedule_group_resource_arn = local.schedule_group_resource_arn
+  tags                        = local.tags
 }
 
 module "functions" {
@@ -125,8 +129,8 @@ module "authentication" {
   source              = "../../modules/cognito"
   name_prefix         = var.name_prefix
   region              = var.aws_region
-  callback_urls       = [module.frontend_distribution.url]
-  logout_urls         = [module.frontend_distribution.url]
+  callback_urls       = ["${module.frontend_distribution.url}/"]
+  logout_urls         = ["${module.frontend_distribution.url}/"]
   domain_prefix       = var.cognito_domain_prefix
   deletion_protection = var.cognito_deletion_protection_enabled
   tags                = local.tags

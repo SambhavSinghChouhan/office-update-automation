@@ -9,6 +9,7 @@ variable "table_arn" { type = string }
 variable "table_index_arn" { type = string }
 variable "integration_secret_arns" { type = list(string) }
 variable "schedule_group_arn" { type = string }
+variable "schedule_group_resource_arn" { type = string }
 variable "tags" {
   type    = map(string)
   default = {}

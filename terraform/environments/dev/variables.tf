@@ -92,6 +92,15 @@ variable "timezone" {
     error_message = "timezone must be an IANA-style region/city name."
   }
 }
+variable "session_retention_days" {
+  description = "Retention for completed or safely failed sessions; active and ambiguous-delivery sessions do not expire."
+  type        = number
+  default     = 365
+  validation {
+    condition     = var.session_retention_days >= 30 && var.session_retention_days <= 3650
+    error_message = "session_retention_days must be between 30 and 3650 days."
+  }
+}
 variable "log_retention_days" {
   type    = number
   default = 30
@@ -139,6 +148,7 @@ variable "api_routes" {
     "POST /sessions",
     "GET /sessions/{sessionId}",
     "PUT /sessions/{sessionId}",
-    "POST /sessions/{sessionId}/retry"
+    "POST /sessions/{sessionId}/retry",
+    "POST /sessions/{sessionId}/confirm-delivered"
   ]
 }
