@@ -1,13 +1,28 @@
-# Account bootstrap
+# Per-account bootstrap
 
-Run this root per account/environment with an administrator identity (prefer AWS IAM Identity Center/SSO). Bootstrap state stays local so the backend bucket can be created before the application root is initialized. Keep local state backed up securely and out of Git.
+This Terraform root runs before the application root. It creates the private versioned state and Lambda-artifact S3 buckets, the account's GitHub Actions OIDC provider (or reuses an existing one), and the `office-update-dev-github-deploy` role with its repository-restricted trust and app-scoped deployment policy.
 
-It creates versioned/private Lambda artifact and Terraform state buckets, a GitHub OIDC provider when requested, and a role restricted to the configured GitHub repository subjects. GitHub subjects include immutable owner/repository IDs in the form `repo:OWNER@OWNER_ID/REPO@REPO_ID:ref:refs/heads/main`; trust the exact subject shown by your workflow. The role policy supports `environments/dev` and limits state access to this account/environment's state and lock objects; it is not an account administrator policy. CloudFront's global APIs require wildcard resource scope, and API Gateway/Cognito policies are limited to the account/region or pool resource type rather than a human-readable name. IAM pass-role is separately restricted to this project/environment role prefix and Lambda/Scheduler services. For strong isolation between production and development, use separate AWS accounts. Review and narrow the action set as the application stabilizes.
+The bootstrap backend intentionally remains local because the remote state bucket is one of the resources this root creates. Use authorized credentials for the target AWS account, set `expected_account_id`, and keep a secure backup of the generated local `terraform.tfstate`. Never commit bootstrap state or `terraform.tfvars`. Preserve a different bootstrap state per account/environment; importing existing resources is safer than creating duplicates if state is lost.
 
-The deployment role can write secret values only under `<project_name>-<environment>/*`. This supports a later GitHub workflow syncing GitHub Actions secrets into Secrets Manager without placing secret values in Terraform inputs/state. Restrict who can administer those GitHub secrets and protect the GitHub Environment. CloudFront's global control-plane API requires wildcard resource scope; the role's repository/subject trust and explicit action list still constrain its use.
+Quick start:
 
-## Account reuse
+```sh
+cp terraform.tfvars.example terraform.tfvars
+# Edit account, globally unique bucket names, repo, and exact OIDC sub claim.
+aws sts get-caller-identity
+terraform init
+terraform fmt -recursive
+terraform validate
+terraform plan
+# Review account and plan before a human-authorized bootstrap apply.
+terraform apply
+terraform output
+```
 
-For another environment/account, use credentials for the target account, set `environment`, provide a distinct globally unique artifact bucket name, and set `expected_account_id` as a guard. Use an OIDC subject for that environment. In a new account, create the provider; for another environment in an account that already has it, set `create_github_oidc_provider = false` and provide the existing provider ARN. Select a distinct local workspace such as `<account-id>-<environment>` in this root. No application resource definitions need account-specific edits.
+The OIDC provider URL is `https://token.actions.githubusercontent.com` and its audience is `sts.amazonaws.com`. Its ARN is account-specific. If it already exists, set `create_github_oidc_provider = false` and pass its ARN via `existing_github_oidc_provider_arn`; do not create a second provider.
 
-The bootstrap root itself uses local state. The application root uses the bootstrap-created S3 bucket with Terraform's native S3 lock file (`use_lockfile=true`), supported by Terraform 1.10 and newer. Keep bootstrap state backed up securely and never commit it.
+Outputs `github_deployment_role_arn`, `terraform_state_bucket_name`, `lambda_artifact_bucket_name`, and `aws_account_id` are copied to the matching GitHub Actions secrets as described in [`../README.md`](../README.md). The role ARN goes in the `OIDC` secret. Do not use the OIDC provider ARN or the IAM `github-oidc` user ARN for that secret.
+
+The deployment policy is explicit and prefix/region/account scoped wherever AWS allows it. A small number of global APIs require `Resource = "*"`; these are read-only discovery or AWS control-plane APIs, and are described in the main runbook. It is not an administrator policy. Update this root and apply the bootstrap policy before using a newly added permission in the application workflow.
+
+The application backend uses the bootstrap state bucket with an account/environment-specific key and native S3 lock file (`use_lockfile=true`, Terraform 1.10+). Bootstrap buckets, OIDC provider, and deployment role are intentionally not removed by the dev application destroy workflow.
