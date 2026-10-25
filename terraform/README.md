@@ -57,7 +57,7 @@ This repository does not yet contain AWS Lambda handler packages. Do not invent 
 
 ## GitHub Actions workflow and repository secrets
 
-`.github/workflows/terraform.yaml` runs format, init, validate, and plan on pushes to `main`. A manual `workflow_dispatch` can select `apply`; apply uses the exact saved plan from the plan job and is restricted to `main`. GitHub Actions OIDC supplies short-lived credentials. No AWS access keys are used.
+`.github/workflows/terraform.yaml` runs only through manual `workflow_dispatch`. It runs format, init, validate, and plan; selecting `apply` applies the saved plan and is restricted to `main`. GitHub Actions OIDC supplies short-lived credentials. No AWS access keys are used.
 
 Configure these GitHub Actions repository secrets before running the workflow:
 
@@ -65,18 +65,13 @@ Configure these GitHub Actions repository secrets before running the workflow:
 |---|---|
 | `OIDC` | Role ARN output by bootstrap (`github_deployment_role_arn`), not the OIDC provider ARN |
 | `AWS_ACCOUNT_ID` | Target 12-digit account ID |
-| `AWS_REGION` | Deployment region |
 | `TF_STATE_BUCKET` | Bootstrap-created Terraform state bucket name |
-| `TF_ENVIRONMENT` | Environment name, such as `dev` |
-| `TF_NAME_PREFIX` | Resource prefix, such as `office-update-dev` |
-| `FRONTEND_BUCKET_NAME` | Globally unique frontend bucket name |
-| `LAMBDA_ARTIFACT_BUCKET_NAME` | Bootstrap-created Lambda artifact bucket name |
-| `TF_TIMEZONE` | IANA timezone, such as `Asia/Kolkata` |
-| `TF_LOG_RETENTION_DAYS` | Supported CloudWatch retention number, such as `30` |
+
+The workflow keeps region (`ap-south-1`), environment (`dev`), naming prefix, timezone (`Asia/Kolkata`), and log retention (`30` days) in code. Frontend and artifact bucket names are built from the coded prefix/region and `AWS_ACCOUNT_ID`, so they stay account-specific without additional secrets. Update those workflow values directly if this deployment configuration changes.
 
 The bootstrap role trust must match the workflow's repository and `main` branch. The role and policy need to be updated by running bootstrap after the state-bucket additions, before the workflow can initialize remote state.
 
-The deployment role trusts only the configured repository subject(s) and `sts.amazonaws.com` audience. Configure the GitHub workflow to request `id-token: write` and assume the role with `aws-actions/configure-aws-credentials`; the AWS credentials are short-lived. The workflow reads account/environment configuration from GitHub Actions secrets. No permanent AWS access keys belong in GitHub.
+The deployment role trusts only the configured repository subject(s) and `sts.amazonaws.com` audience. Configure the GitHub workflow to request `id-token: write` and assume the role with `aws-actions/configure-aws-credentials`; the AWS credentials are short-lived. The workflow reads the account ID, role ARN, and state bucket name from GitHub Actions secrets. No permanent AWS access keys belong in GitHub.
 
 The optional `deployment_role_arn` provider variable is for local `terraform plan` runs that use an AWS CLI/SSO identity allowed to assume that role. The local-only `environments/dev/terraform.tfvars` contains the role ARN you supplied and is ignored by Git. An OIDC-only role may not trust a local identity, so local assumption can fail even when GitHub OIDC works. In GitHub Actions, pass the same role ARN to `aws-actions/configure-aws-credentials` (a GitHub Actions variable is sufficient; it is not a credential). The account-local OIDC provider ARN is a different identifier and is created/reused by bootstrap.
 
