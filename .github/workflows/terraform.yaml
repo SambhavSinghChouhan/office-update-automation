@@ -230,12 +230,13 @@ jobs:
           -backend-config="use_lockfile=true"
           -backend-config="encrypt=true"
 
-      - name: Disable DynamoDB and Cognito deletion protection
+      - name: Prepare protected resources and versioned frontend bucket for deletion
         working-directory: terraform/environments/dev
         run: >-
           terraform apply -input=false -auto-approve -lock-timeout=5m
           -target=module.sessions.aws_dynamodb_table.sessions
           -target=module.authentication.aws_cognito_user_pool.app
+          -target=module.frontend_bucket.aws_s3_bucket.frontend
 
       - name: Create final destroy plan
         working-directory: terraform/environments/dev
