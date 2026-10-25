@@ -64,25 +64,7 @@ jobs:
       - name: Build and upload Lambda packages
         if: inputs.action != 'destroy'
         working-directory: application/lambda
-        run: |
-          npm ci --ignore-scripts
-          npm test
-          node --check src/session.js
-          node --check src/processor.js
-          node --check ../../js/app.js
-          node --check ../../js/api.js
-          package_dir="${RUNNER_TEMP}/office-update-lambda"
-          mkdir -p "$package_dir"
-          find package.json package-lock.json src node_modules -exec touch -h -t 198001010000 {} +
-          zip -X -rq "$package_dir/session-api.zip" package.json package-lock.json node_modules src
-          cp "$package_dir/session-api.zip" "$package_dir/report-processor.zip"
-          session_hash="$(openssl dgst -sha256 -binary "$package_dir/session-api.zip" | openssl base64 -A)"
-          processor_hash="$(openssl dgst -sha256 -binary "$package_dir/report-processor.zip" | openssl base64 -A)"
-          echo "TF_VAR_lambda_artifact_hashes={\"session_api\":\"${session_hash}\",\"report_processor\":\"${processor_hash}\"}" >> "$GITHUB_ENV"
-          aws s3 cp "$package_dir/session-api.zip" "s3://${TF_VAR_lambda_artifact_bucket_name}/dev/session-api.zip" --only-show-errors
-          aws s3 cp "$package_dir/report-processor.zip" "s3://${TF_VAR_lambda_artifact_bucket_name}/dev/report-processor.zip" --only-show-errors
-          aws s3api head-object --bucket "$TF_VAR_lambda_artifact_bucket_name" --key dev/session-api.zip >/dev/null
-          aws s3api head-object --bucket "$TF_VAR_lambda_artifact_bucket_name" --key dev/report-processor.zip >/dev/null
+        run: bash package-and-upload.sh
 
       - name: Check Terraform formatting
         run: terraform fmt -check -recursive terraform
@@ -158,6 +140,12 @@ jobs:
         with:
           role-to-assume: ${{ secrets.OIDC }}
           aws-region: ap-south-1
+
+      - name: Rebuild and upload Lambda packages for apply
+        working-directory: application/lambda
+        env:
+          SKIP_LAMBDA_TESTS: "true"
+        run: bash package-and-upload.sh
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3

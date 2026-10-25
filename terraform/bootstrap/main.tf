@@ -289,6 +289,15 @@ data "aws_iam_policy_document" "github_deploy" {
     resources = ["*"]
   }
   statement {
+    sid = "ManageHttpApiLogDelivery"
+    actions = [
+      "logs:CreateLogDelivery", "logs:PutResourcePolicy", "logs:UpdateLogDelivery",
+      "logs:DeleteLogDelivery", "logs:DescribeResourcePolicies", "logs:GetLogDelivery",
+      "logs:ListLogDeliveries"
+    ]
+    resources = ["*"]
+  }
+  statement {
     sid     = "ManagePrefixedLogs"
     actions = ["logs:PutRetentionPolicy", "logs:DeleteLogGroup", "logs:ListTagsForResource", "logs:TagResource", "logs:UntagResource"]
     resources = [
