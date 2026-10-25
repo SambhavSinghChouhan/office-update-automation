@@ -1,11 +1,6 @@
 name: Terraform
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "terraform/**"
-      - ".github/workflows/terraform.yaml"
   workflow_dispatch:
     inputs:
       action:
