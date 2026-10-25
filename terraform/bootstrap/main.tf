@@ -263,8 +263,13 @@ data "aws_iam_policy_document" "github_deploy" {
   }
   statement {
     sid       = "ManageCognitoPools"
-    actions   = ["cognito-idp:CreateUserPool", "cognito-idp:DescribeUserPool", "cognito-idp:GetUserPoolMfaConfig", "cognito-idp:UpdateUserPool", "cognito-idp:SetUserPoolMfaConfig", "cognito-idp:DeleteUserPool", "cognito-idp:CreateUserPoolClient", "cognito-idp:DescribeUserPoolClient", "cognito-idp:UpdateUserPoolClient", "cognito-idp:DeleteUserPoolClient", "cognito-idp:CreateUserPoolDomain", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:DeleteUserPoolDomain", "cognito-idp:TagResource", "cognito-idp:UntagResource", "cognito-idp:ListTagsForResource"]
+    actions   = ["cognito-idp:CreateUserPool", "cognito-idp:DescribeUserPool", "cognito-idp:GetUserPoolMfaConfig", "cognito-idp:UpdateUserPool", "cognito-idp:SetUserPoolMfaConfig", "cognito-idp:DeleteUserPool", "cognito-idp:CreateUserPoolClient", "cognito-idp:DescribeUserPoolClient", "cognito-idp:UpdateUserPoolClient", "cognito-idp:DeleteUserPoolClient", "cognito-idp:CreateUserPoolDomain", "cognito-idp:DeleteUserPoolDomain", "cognito-idp:TagResource", "cognito-idp:UntagResource", "cognito-idp:ListTagsForResource"]
     resources = ["arn:${data.aws_partition.current.partition}:cognito-idp:${var.aws_region}:${local.account_id}:userpool/*"]
+  }
+  statement {
+    sid       = "DescribeCognitoUserPoolDomains"
+    actions   = ["cognito-idp:DescribeUserPoolDomain"]
+    resources = ["*"]
   }
   statement {
     sid       = "ManagePrefixedSessionTables"
@@ -278,7 +283,7 @@ data "aws_iam_policy_document" "github_deploy" {
   }
   statement {
     sid       = "ManagePrefixedFunctions"
-    actions   = ["lambda:GetFunction", "lambda:GetFunctionConfiguration", "lambda:UpdateFunctionCode", "lambda:UpdateFunctionConfiguration", "lambda:DeleteFunction", "lambda:AddPermission", "lambda:RemovePermission", "lambda:GetPolicy", "lambda:TagResource", "lambda:UntagResource", "lambda:ListTags", "lambda:ListVersionsByFunction"]
+    actions   = ["lambda:GetFunction", "lambda:GetFunctionConfiguration", "lambda:GetFunctionCodeSigningConfig", "lambda:UpdateFunctionCode", "lambda:UpdateFunctionConfiguration", "lambda:DeleteFunction", "lambda:AddPermission", "lambda:RemovePermission", "lambda:GetPolicy", "lambda:TagResource", "lambda:UntagResource", "lambda:ListTags", "lambda:ListVersionsByFunction"]
     resources = [local.lambda_arn_prefix]
   }
   statement {
