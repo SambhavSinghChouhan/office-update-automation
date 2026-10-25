@@ -4,13 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "Choose plan only or plan and apply"
+        description: "Choose plan, apply, or destroy"
         type: choice
         required: true
         default: plan
         options:
           - plan
           - apply
+          - destroy
+      confirm_destroy:
+        description: "For destroy only, type DESTROY DEV"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -73,9 +79,21 @@ jobs:
         working-directory: terraform/environments/dev
         run: terraform validate
 
+      - name: Require explicit destroy confirmation
+        if: inputs.action == 'destroy' && inputs.confirm_destroy != 'DESTROY DEV'
+        run: |
+          echo "Destroy not authorized. Enter DESTROY DEV in the confirm_destroy input."
+          exit 1
+
       - name: Create saved Terraform plan
+        if: inputs.action != 'destroy'
         working-directory: terraform/environments/dev
         run: terraform plan -input=false -lock-timeout=5m -out=tfplan
+
+      - name: Preview Terraform destruction
+        if: inputs.action == 'destroy'
+        working-directory: terraform/environments/dev
+        run: terraform plan -destroy -input=false -lock-timeout=5m
 
       - name: Upload saved plan for optional apply
         if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
@@ -140,5 +158,71 @@ jobs:
           path: terraform/environments/dev
 
       - name: Apply saved plan
+        working-directory: terraform/environments/dev
+        run: terraform apply -input=false -lock-timeout=5m tfplan
+
+  destroy:
+    name: Destroy dev application resources
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy' && inputs.confirm_destroy == 'DESTROY DEV' && github.ref == 'refs/heads/main'
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: dev-destroy
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      TF_VAR_aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
+      TF_VAR_aws_region: ap-south-1
+      TF_VAR_deployment_role_arn: ""
+      TF_VAR_environment: dev
+      TF_VAR_name_prefix: office-update-dev
+      TF_VAR_frontend_bucket_name: office-update-dev-${{ secrets.AWS_ACCOUNT_ID }}-ap-south-1-frontend
+      TF_VAR_frontend_bucket_force_destroy: "true"
+      TF_VAR_lambda_artifact_bucket_name: office-update-dev-${{ secrets.AWS_ACCOUNT_ID }}-ap-south-1-artifacts
+      TF_VAR_timezone: Asia/Kolkata
+      TF_VAR_log_retention_days: "30"
+      TF_VAR_dynamodb_deletion_protection_enabled: "false"
+      TF_VAR_cognito_deletion_protection_enabled: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials with GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.OIDC }}
+          aws-region: ap-south-1
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.5"
+
+      - name: Initialize Terraform with S3 state and native lock file
+        working-directory: terraform/environments/dev
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+        run: >-
+          terraform init -input=false -reconfigure
+          -backend-config="bucket=${TF_STATE_BUCKET}"
+          -backend-config="key=${TF_VAR_aws_account_id}/${TF_VAR_environment}/terraform.tfstate"
+          -backend-config="region=ap-south-1"
+          -backend-config="use_lockfile=true"
+          -backend-config="encrypt=true"
+
+      - name: Disable DynamoDB and Cognito deletion protection
+        working-directory: terraform/environments/dev
+        run: >-
+          terraform apply -input=false -auto-approve -lock-timeout=5m
+          -target=module.sessions.aws_dynamodb_table.sessions
+          -target=module.authentication.aws_cognito_user_pool.app
+
+      - name: Create final destroy plan
+        working-directory: terraform/environments/dev
+        run: terraform plan -destroy -input=false -lock-timeout=5m -out=tfplan
+
+      - name: Apply destroy plan
         working-directory: terraform/environments/dev
         run: terraform apply -input=false -lock-timeout=5m tfplan

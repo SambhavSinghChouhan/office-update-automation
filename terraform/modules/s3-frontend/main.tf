@@ -1,10 +1,7 @@
 resource "aws_s3_bucket" "frontend" {
   bucket        = var.bucket_name
-  force_destroy = false
+  force_destroy = var.force_destroy
   tags          = var.tags
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 resource "aws_s3_bucket_versioning" "frontend" {

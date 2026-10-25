@@ -46,10 +46,11 @@ locals {
 }
 
 module "frontend_bucket" {
-  source      = "../../modules/s3-frontend"
-  bucket_name = var.frontend_bucket_name
-  tags        = local.tags
-  depends_on  = [terraform_data.account_guard]
+  source        = "../../modules/s3-frontend"
+  bucket_name   = var.frontend_bucket_name
+  force_destroy = var.frontend_bucket_force_destroy
+  tags          = local.tags
+  depends_on    = [terraform_data.account_guard]
 }
 
 module "frontend_distribution" {
@@ -121,13 +122,14 @@ module "scheduler" {
 }
 
 module "authentication" {
-  source        = "../../modules/cognito"
-  name_prefix   = var.name_prefix
-  region        = var.aws_region
-  callback_urls = [module.frontend_distribution.url]
-  logout_urls   = [module.frontend_distribution.url]
-  domain_prefix = var.cognito_domain_prefix
-  tags          = local.tags
+  source              = "../../modules/cognito"
+  name_prefix         = var.name_prefix
+  region              = var.aws_region
+  callback_urls       = [module.frontend_distribution.url]
+  logout_urls         = [module.frontend_distribution.url]
+  domain_prefix       = var.cognito_domain_prefix
+  deletion_protection = var.cognito_deletion_protection_enabled
+  tags                = local.tags
 }
 
 module "api" {

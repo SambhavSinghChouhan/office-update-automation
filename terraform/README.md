@@ -59,6 +59,8 @@ This repository does not yet contain AWS Lambda handler packages. Do not invent 
 
 `.github/workflows/terraform.yaml` runs only through manual `workflow_dispatch`. It runs format, init, validate, and plan; selecting `apply` applies the saved plan and is restricted to `main`. GitHub Actions OIDC supplies short-lived credentials. No AWS access keys are used.
 
+Selecting `destroy` requires the exact `DESTROY DEV` confirmation. The workflow first previews destruction, disables DynamoDB and Cognito deletion protection, then plans and applies the final destroy. It removes the dev application stack, including frontend objects and application resources. Secrets Manager secrets enter their configured recovery window. The bootstrap state/artifact buckets, GitHub deployment role, and OIDC provider are intentionally retained so Terraform state remains available and the stack can be redeployed. Configure GitHub Environment `dev-destroy` with required reviewers if you want an additional approval gate.
+
 Configure these GitHub Actions repository secrets before running the workflow:
 
 | Secret | Value |
@@ -89,4 +91,4 @@ The session table and IAM resources are provisioned, but actual validation, dura
 
 Potential charges include CloudFront transfer/requests, S3 storage/requests, API Gateway calls, Lambda duration, DynamoDB storage/requests/backups, EventBridge schedules/invocations, Cognito usage, Secrets Manager secret/API usage, CloudWatch log ingestion/retention/alarms, and external Gemini API usage. The artifact bucket also incurs storage charges. This is not guaranteed to be free. Check current pricing in the selected region before deployment.
 
-The frontend and artifact buckets have `prevent_destroy` or `force_destroy = false` protections where appropriate; DynamoDB deletion protection is enabled by default. Secret deletion uses a recovery window. Review retention and cleanup before changing those safeguards. No Cloudflare resource is managed or removed by this Terraform.
+Frontend bucket force deletion is disabled during normal operations and enabled only by the confirmed destroy workflow. DynamoDB and Cognito deletion protection are enabled by default and disabled only during that workflow. Secret deletion uses a recovery window. No Cloudflare resource is managed or removed by this Terraform.

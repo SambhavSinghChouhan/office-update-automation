@@ -104,6 +104,14 @@ variable "dynamodb_deletion_protection_enabled" {
   type    = bool
   default = true
 }
+variable "cognito_deletion_protection_enabled" {
+  type    = bool
+  default = true
+}
+variable "frontend_bucket_force_destroy" {
+  type    = bool
+  default = false
+}
 variable "dynamodb_point_in_time_recovery_enabled" {
   type    = bool
   default = true
