@@ -205,8 +205,9 @@ data "aws_iam_policy_document" "github_deploy" {
     sid = "ConfigureOnlyPrefixedFrontendBuckets"
     actions = [
       "s3:DeleteBucket", "s3:GetBucketLocation", "s3:GetBucketPolicy", "s3:PutBucketPolicy", "s3:DeleteBucketPolicy",
-      "s3:GetBucketAcl",
-      "s3:GetBucketVersioning", "s3:PutBucketVersioning", "s3:GetEncryptionConfiguration", "s3:PutEncryptionConfiguration",
+      "s3:GetAccelerateConfiguration", "s3:GetBucketAcl", "s3:GetBucketLogging", "s3:GetBucketNotification", "s3:GetBucketObjectLockConfiguration", "s3:GetBucketPolicyStatus", "s3:GetBucketRequestPayment",
+      "s3:GetLifecycleConfiguration", "s3:GetReplicationConfiguration",
+      "s3:GetBucketVersioning", "s3:PutBucketVersioning", "s3:GetBucketCORS", "s3:GetBucketWebsite", "s3:GetEncryptionConfiguration", "s3:PutEncryptionConfiguration",
       "s3:GetBucketPublicAccessBlock", "s3:PutBucketPublicAccessBlock", "s3:DeleteBucketPublicAccessBlock",
       "s3:GetBucketOwnershipControls", "s3:PutBucketOwnershipControls", "s3:GetBucketTagging", "s3:PutBucketTagging", "s3:DeleteBucketTagging",
       "s3:ListBucket"
@@ -248,9 +249,12 @@ data "aws_iam_policy_document" "github_deploy" {
     resources = ["arn:${data.aws_partition.current.partition}:scheduler:${var.aws_region}:${local.account_id}:schedule-group/${local.deployment_prefix}-*", "arn:${data.aws_partition.current.partition}:scheduler:${var.aws_region}:${local.account_id}:schedule/${local.deployment_prefix}-*/*"]
   }
   statement {
-    sid       = "ManageHttpApi"
-    actions   = ["apigateway:POST", "apigateway:GET", "apigateway:PUT", "apigateway:PATCH", "apigateway:DELETE"]
-    resources = ["arn:${data.aws_partition.current.partition}:apigateway:${var.aws_region}::/apis*"]
+    sid     = "ManageHttpApi"
+    actions = ["apigateway:POST", "apigateway:GET", "apigateway:PUT", "apigateway:PATCH", "apigateway:DELETE", "apigateway:TagResource", "apigateway:UntagResource"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:apigateway:${var.aws_region}::/apis*",
+      "arn:${data.aws_partition.current.partition}:apigateway:${var.aws_region}::/tags/*"
+    ]
   }
   statement {
     sid       = "ManageCloudFrontDistribution"
@@ -259,12 +263,12 @@ data "aws_iam_policy_document" "github_deploy" {
   }
   statement {
     sid       = "ManageCognitoPools"
-    actions   = ["cognito-idp:CreateUserPool", "cognito-idp:DescribeUserPool", "cognito-idp:UpdateUserPool", "cognito-idp:SetUserPoolMfaConfig", "cognito-idp:DeleteUserPool", "cognito-idp:CreateUserPoolClient", "cognito-idp:DescribeUserPoolClient", "cognito-idp:UpdateUserPoolClient", "cognito-idp:DeleteUserPoolClient", "cognito-idp:CreateUserPoolDomain", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:DeleteUserPoolDomain", "cognito-idp:TagResource", "cognito-idp:UntagResource", "cognito-idp:ListTagsForResource"]
+    actions   = ["cognito-idp:CreateUserPool", "cognito-idp:DescribeUserPool", "cognito-idp:GetUserPoolMfaConfig", "cognito-idp:UpdateUserPool", "cognito-idp:SetUserPoolMfaConfig", "cognito-idp:DeleteUserPool", "cognito-idp:CreateUserPoolClient", "cognito-idp:DescribeUserPoolClient", "cognito-idp:UpdateUserPoolClient", "cognito-idp:DeleteUserPoolClient", "cognito-idp:CreateUserPoolDomain", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:DeleteUserPoolDomain", "cognito-idp:TagResource", "cognito-idp:UntagResource", "cognito-idp:ListTagsForResource"]
     resources = ["arn:${data.aws_partition.current.partition}:cognito-idp:${var.aws_region}:${local.account_id}:userpool/*"]
   }
   statement {
     sid       = "ManagePrefixedSessionTables"
-    actions   = ["dynamodb:DescribeTable", "dynamodb:UpdateTable", "dynamodb:UpdateContinuousBackups", "dynamodb:DeleteTable", "dynamodb:TagResource", "dynamodb:UntagResource", "dynamodb:ListTagsOfResource", "dynamodb:DescribeTimeToLive", "dynamodb:UpdateTimeToLive"]
+    actions   = ["dynamodb:DescribeTable", "dynamodb:UpdateTable", "dynamodb:DescribeContinuousBackups", "dynamodb:UpdateContinuousBackups", "dynamodb:DeleteTable", "dynamodb:TagResource", "dynamodb:UntagResource", "dynamodb:ListTagsOfResource", "dynamodb:DescribeTimeToLive", "dynamodb:UpdateTimeToLive"]
     resources = [local.dynamodb_arn_prefix]
   }
   statement {
@@ -278,8 +282,15 @@ data "aws_iam_policy_document" "github_deploy" {
     resources = [local.lambda_arn_prefix]
   }
   statement {
+    # DescribeLogGroups does not support resource-level authorization, so Terraform
+    # needs this read-only list action on "*" when refreshing managed log groups.
+    sid       = "DescribeLogGroupsForTerraform"
+    actions   = ["logs:DescribeLogGroups"]
+    resources = ["*"]
+  }
+  statement {
     sid     = "ManagePrefixedLogs"
-    actions = ["logs:DescribeLogGroups", "logs:PutRetentionPolicy", "logs:DeleteLogGroup", "logs:ListTagsForResource", "logs:TagResource", "logs:UntagResource"]
+    actions = ["logs:PutRetentionPolicy", "logs:DeleteLogGroup", "logs:ListTagsForResource", "logs:TagResource", "logs:UntagResource"]
     resources = [
       "arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${local.account_id}:log-group:/aws/lambda/${local.deployment_prefix}-*",
       "arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${local.account_id}:log-group:/aws/http-api/${local.deployment_prefix}*"
@@ -304,7 +315,7 @@ data "aws_iam_policy_document" "github_deploy" {
     sid = "ManageOnlyPrefixedRuntimeRoles"
     actions = [
       "iam:CreateRole", "iam:GetRole", "iam:UpdateRole", "iam:DeleteRole", "iam:UpdateAssumeRolePolicy",
-      "iam:TagRole", "iam:UntagRole", "iam:ListRoleTags", "iam:ListRolePolicies", "iam:PutRolePolicy", "iam:GetRolePolicy", "iam:DeleteRolePolicy"
+      "iam:TagRole", "iam:UntagRole", "iam:ListRoleTags", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies", "iam:PutRolePolicy", "iam:GetRolePolicy", "iam:DeleteRolePolicy"
     ]
     resources = [local.iam_role_arn_prefix]
   }

@@ -81,6 +81,8 @@ jobs:
           echo "TF_VAR_lambda_artifact_hashes={\"session_api\":\"${session_hash}\",\"report_processor\":\"${processor_hash}\"}" >> "$GITHUB_ENV"
           aws s3 cp "$package_dir/session-api.zip" "s3://${TF_VAR_lambda_artifact_bucket_name}/dev/session-api.zip" --only-show-errors
           aws s3 cp "$package_dir/report-processor.zip" "s3://${TF_VAR_lambda_artifact_bucket_name}/dev/report-processor.zip" --only-show-errors
+          aws s3api head-object --bucket "$TF_VAR_lambda_artifact_bucket_name" --key dev/session-api.zip >/dev/null
+          aws s3api head-object --bucket "$TF_VAR_lambda_artifact_bucket_name" --key dev/report-processor.zip >/dev/null
 
       - name: Check Terraform formatting
         run: terraform fmt -check -recursive terraform
@@ -179,6 +181,11 @@ jobs:
         with:
           name: terraform-dev-plan
           path: terraform/environments/dev
+
+      - name: Verify Lambda artifacts still exist
+        run: |
+          aws s3api head-object --bucket "$TF_VAR_lambda_artifact_bucket_name" --key dev/session-api.zip >/dev/null
+          aws s3api head-object --bucket "$TF_VAR_lambda_artifact_bucket_name" --key dev/report-processor.zip >/dev/null
 
       - name: Apply saved plan
         working-directory: terraform/environments/dev
