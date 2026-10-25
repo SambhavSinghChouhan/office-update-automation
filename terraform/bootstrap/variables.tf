@@ -62,10 +62,13 @@ variable "github_repository" {
 }
 
 variable "github_subjects" {
-  description = "Exact GitHub OIDC sub values, e.g. repo:owner/repo:environment:dev or repo:owner/repo:ref:refs/heads/main."
+  description = "Exact GitHub OIDC sub values. Current GitHub subjects include immutable owner/repository IDs, e.g. repo:owner@123/repo@456:ref:refs/heads/main."
   type        = list(string)
   validation {
-    condition     = length(var.github_subjects) > 0 && alltrue([for subject in var.github_subjects : startswith(subject, "repo:${var.github_repository}:")])
+    condition = length(var.github_subjects) > 0 && alltrue([for subject in var.github_subjects : (
+      startswith(subject, "repo:${var.github_repository}:") ||
+      (startswith(subject, "repo:${split("/", var.github_repository)[0]}@") && strcontains(subject, "/${split("/", var.github_repository)[1]}@"))
+    )])
     error_message = "At least one GitHub subject is required and every subject must belong to github_repository."
   }
 }

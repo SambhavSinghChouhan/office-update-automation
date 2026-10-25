@@ -6,9 +6,10 @@ artifact_bucket_name = "replace-with-unique-lambda-artifact-bucket"
 state_bucket_name    = "replace-with-unique-terraform-state-bucket"
 github_repository    = "your-github-owner/office-update-automation"
 
-# Prefer a protected GitHub Environment subject for deployments.
+# GitHub's current subject format includes immutable owner and repository IDs.
+# Find the exact `sub` claim from a GitHub Actions OIDC token for this repository.
 github_subjects = [
-  "repo:your-github-owner/office-update-automation:environment:dev"
+  "repo:your-github-owner@123456/office-update-automation@987654:ref:refs/heads/main"
 ]
 
 create_github_oidc_provider = true
