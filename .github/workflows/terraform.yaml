@@ -166,7 +166,6 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy' && inputs.confirm_destroy == 'DESTROY DEV' && github.ref == 'refs/heads/main'
     needs: plan
     runs-on: ubuntu-latest
-    environment: dev-destroy
     permissions:
       contents: read
       id-token: write

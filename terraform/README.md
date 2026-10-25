@@ -59,7 +59,7 @@ This repository does not yet contain AWS Lambda handler packages. Do not invent 
 
 `.github/workflows/terraform.yaml` runs only through manual `workflow_dispatch`. It runs format, init, validate, and plan; selecting `apply` applies the saved plan and is restricted to `main`. GitHub Actions OIDC supplies short-lived credentials. No AWS access keys are used.
 
-Selecting `destroy` requires the exact `DESTROY DEV` confirmation. The workflow first previews destruction, disables DynamoDB and Cognito deletion protection, then plans and applies the final destroy. It removes the dev application stack, including frontend objects and application resources. Secrets Manager secrets enter their configured recovery window. The bootstrap state/artifact buckets, GitHub deployment role, and OIDC provider are intentionally retained so Terraform state remains available and the stack can be redeployed. Configure GitHub Environment `dev-destroy` with required reviewers if you want an additional approval gate.
+Selecting `destroy` requires the exact `DESTROY DEV` confirmation. The workflow first previews destruction, disables DynamoDB and Cognito deletion protection, then plans and applies the final destroy. It removes the dev application stack, including frontend objects and application resources. Secrets Manager secrets enter their configured recovery window. The bootstrap state/artifact buckets, GitHub deployment role, and OIDC provider are intentionally retained so Terraform state remains available and the stack can be redeployed.
 
 Configure these GitHub Actions repository secrets before running the workflow:
 
