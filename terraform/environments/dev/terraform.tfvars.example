@@ -1,0 +1,38 @@
+aws_account_id              = "123456789012"
+aws_region                  = "ap-south-1"
+environment                 = "dev"
+name_prefix                 = "office-update-dev"
+frontend_bucket_name        = "office-update-dev-replace-with-unique-suffix"
+lambda_artifact_bucket_name = "replace-with-bootstrap-artifact-bucket"
+
+# CI must upload these objects before the application infrastructure apply.
+lambda_artifact_keys = {
+  session_api      = "dev/session-api.zip"
+  report_processor = "dev/report-processor.zip"
+}
+
+# CI should set the base64 SHA-256 hashes after packaging; these placeholders
+# deliberately do not constitute valid deployable Lambda code.
+lambda_artifact_hashes = {
+  session_api      = "REPLACE_WITH_BASE64_SHA256"
+  report_processor = "REPLACE_WITH_BASE64_SHA256"
+}
+
+# Optional: supply object version IDs instead of, or along with, source hashes.
+lambda_artifact_versions = {}
+
+# Optional custom domain. The ACM certificate must be in us-east-1.
+frontend_domain_names      = []
+frontend_acm_certificate_arn = ""
+
+# Leave blank to use Cognito APIs/SDK directly; set a unique prefix for hosted UI.
+cognito_domain_prefix = ""
+
+timezone                               = "Asia/Kolkata"
+log_retention_days                     = 30
+dynamodb_deletion_protection_enabled   = true
+dynamodb_point_in_time_recovery_enabled = true
+fallback_enabled                      = true
+schedule_maximum_retry_attempts        = 3
+schedule_maximum_event_age_seconds     = 3600
+cloudfront_price_class                = "PriceClass_100"

@@ -1,0 +1,16 @@
+aws_region          = "ap-south-1"
+expected_account_id  = "123456789012"
+project_name         = "office-update"
+environment          = "dev"
+artifact_bucket_name = "replace-with-unique-lambda-artifact-bucket"
+state_bucket_name    = "replace-with-unique-terraform-state-bucket"
+github_repository    = "your-github-owner/office-update-automation"
+
+# Prefer a protected GitHub Environment subject for deployments.
+github_subjects = [
+  "repo:your-github-owner/office-update-automation:environment:dev"
+]
+
+create_github_oidc_provider = true
+# If provider exists already, set create_github_oidc_provider = false and use:
+# existing_github_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
