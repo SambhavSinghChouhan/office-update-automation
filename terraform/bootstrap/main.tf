@@ -322,7 +322,7 @@ data "aws_iam_policy_document" "github_deploy" {
   }
   statement {
     sid       = "ManagePrefixedAlarms"
-    actions   = ["cloudwatch:PutMetricAlarm", "cloudwatch:DescribeAlarms", "cloudwatch:DeleteAlarms", "cloudwatch:TagResource", "cloudwatch:UntagResource"]
+    actions   = ["cloudwatch:PutMetricAlarm", "cloudwatch:DescribeAlarms", "cloudwatch:DeleteAlarms", "cloudwatch:TagResource", "cloudwatch:UntagResource", "cloudwatch:ListTagsForResource"]
     resources = ["arn:${data.aws_partition.current.partition}:cloudwatch:${var.aws_region}:${local.account_id}:alarm:${local.deployment_prefix}-*"]
   }
   statement {
