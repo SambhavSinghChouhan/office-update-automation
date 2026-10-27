@@ -1,0 +1,377 @@
+OFFICE UPDATE AUTOMATION - CHAT AND PROJECT WORK SUMMARY
+Generated: 2026-10-27 (Asia/Kolkata)
+Repository: SambhavSinghChouhan/office-update-automation
+Working directory: /home/sambhav_singh/docker/projects/office-update-automation
+
+PURPOSE OF THIS FILE
+====================
+This file summarizes the project and the work discussed in this conversation so another AI agent or developer can continue without relying on the full chat. It includes decisions, implementation state, deployment history, errors and fixes, pending work, operational safety, and the most recent Git state. It contains no API keys or webhook values.
+
+For more detailed handoffs, also read:
+  - imp.md: immediate next-agent instructions, constraints, account setup and next steps.
+  - work-done.md: work completed, historical errors/fixes, remaining work.
+  - detailed.md: full application architecture and target workflow.
+  - terraform/README.md: account/bootstrap/OIDC/GitHub workflow runbook.
+  - terraform/bootstrap/README.md: bootstrap-specific guide.
+
+
+1. ORIGINAL PROJECT AND GOAL
+============================
+The repository started as a partially complete Cloudflare-based work-update automation application. Its legacy components include a Cloudflare Worker, D1 schema/query files, scheduled/cron routes, Gemini and Teams integrations, and a browser extension. The initial instruction was to inspect before replacing anything, preserve working business logic, and migrate incrementally to AWS without deleting Cloudflare resources.
+
+The desired AWS application is personal, accessible from a phone or desktop through HTTPS, and must keep processing if the user's device is turned off after submitting a session. The user asked for serverless infrastructure and no always-running EC2 instance. The intended cloud services are S3, CloudFront, Cognito, API Gateway, Lambda, DynamoDB, EventBridge Scheduler, Secrets Manager, CloudWatch, Terraform, and GitHub Actions OIDC.
+
+The user later specified the desired business flow:
+  - Enter clock-in time, send an immediate Teams clock-in notification, and save session state.
+  - Optionally enter clock-out time; schedule report processing/checking based on it.
+  - Run a recurring fallback at 00:30 Asia/Kolkata.
+  - If no clock-in exists, do nothing.
+  - If clock-out remains absent, use a configurable default time (user said "11:30 or something"; AM/PM is not confirmed; 23:30 local was suggested, not approved).
+  - If clock-out is before the fallback, verify delivery at 00:30, recover if needed, then archive/clear active session only after successful delivery.
+  - If clock-out is after the 00:30 worker (example 00:45), schedule a check at clock-out + 10 minutes (example 00:55), send only if not already delivered, then archive/clear after confirmed delivery.
+  - Keep old completed entries in history/logs while current active page becomes null/empty.
+  - Only the 00:30 fallback or the post-00:30 clock-out scheduled check may archive/clear session state. Failed and ambiguous delivery state must remain visible.
+
+The final Teams message should follow the owner's provided format:
+
+ELEPHANT
+
+Clock in - {HH:mm}
+
+Clock out - {HH:mm}
+
+Total hours - {H} hrs {MM} mins
+
+Current ticket - {ticket}
+
+Email - {email status}
+
+Blocker - {blocker or none}
+
+Today's update - {Gemini-generated update, usually three concise paragraphs}
+
+The sample from the owner showed 14:12 clock-in and 23:20 clock-out = 9 hrs 08 mins. Its example work details are formatting references only and must never be reused as fabricated facts.
+
+
+2. REPOSITORY STRUCTURE AND IMPORTANT FILES
+===========================================
+Frontend:
+  index.html
+  css/style.css
+  js/app.js, js/api.js, js/config.js, js/ui.js, js/status.js, js/helpers.js
+  Static page is served from a private S3 bucket through CloudFront.
+
+AWS Lambda application:
+  application/lambda/src/session.js             Authenticated session API and schedule changes
+  application/lambda/src/processor.js            Scheduled fallback/report/Gemini/Teams processing
+  application/lambda/src/aws.js                  DynamoDB, Scheduler, Secrets Manager clients/keys
+  application/lambda/src/http.js                 API Gateway response and Cognito principal helpers
+  application/lambda/src/domain/time.js          Timezone conversion, durations, midnight default
+  application/lambda/src/domain/validation.js    Session validation
+  application/lambda/test/session-domain.test.js Domain tests
+  application/lambda/package-and-upload.sh       Package/upload/verify Lambda ZIPs
+
+Terraform:
+  terraform/bootstrap/                           State/artifact bucket and GitHub OIDC role bootstrap
+  terraform/environments/dev/                    Dev stack composition and variables/outputs
+  terraform/modules/iam/
+  terraform/modules/s3-frontend/
+  terraform/modules/cloudfront/
+  terraform/modules/cognito/
+  terraform/modules/api-gateway/
+  terraform/modules/lambda/
+  terraform/modules/dynamodb/
+  terraform/modules/eventbridge-scheduler/
+  terraform/modules/secrets-manager/
+  terraform/modules/monitoring/
+
+GitHub workflows:
+  .github/workflows/terraform.yaml               Manual plan/apply/destroy
+  .github/workflows/deploy-app.yaml              Manual app code/frontend/secrets deploy
+
+Legacy Cloudflare/browser-extension files remain, including worker/, database/, extension/, prompts/, and old docs. AWS Terraform does not manage or delete Cloudflare resources. Keep these until AWS is verified and the owner separately approves cutover/removal.
+
+
+3. AWS ARCHITECTURE AND HOW IT WORKS TODAY
+==========================================
+Static request flow:
+  Browser -> CloudFront HTTPS -> private S3 frontend using Origin Access Control.
+
+Authentication/API flow:
+  Browser -> Cognito OAuth authorization-code + PKCE -> ID token in sessionStorage ->
+  API Gateway HTTP API JWT authorizer -> session_api Lambda -> DynamoDB.
+
+Scheduled processing flow:
+  Session API creates/updates EventBridge Scheduler schedule -> report_processor Lambda.
+  A recurring EventBridge Scheduler fallback invokes report_processor every day at 00:30
+  in the configured IANA timezone (default Asia/Kolkata). No phone/browser background job
+  is required.
+
+Processing:
+  Processor re-reads latest session; checks scheduleVersion and delivery state; attempts a
+  conditional DynamoDB lease; calculates work duration; retrieves Gemini and Teams values
+  from Secrets Manager; calls Gemini; records generated report; sends Teams message; records
+  delivery/completion state. AWS Lambda currently runs outside a VPC; public HTTPS egress
+  works without a NAT Gateway.
+
+Resources in Terraform:
+  - S3 private frontend, CloudFront distribution/OAC/security response headers.
+  - Cognito user pool/client and optional hosted UI domain.
+  - API Gateway HTTP API/JWT authorizer/access logs.
+  - Session API Lambda and report processor Lambda, runtime roles and log groups.
+  - DynamoDB on-demand table with status GSI, encryption, point-in-time recovery and TTL.
+  - EventBridge Scheduler schedule group, recurring fallback, DLQ, invocation role.
+  - Secrets Manager empty secret containers for Gemini and Teams values.
+  - CloudWatch alarms and logs.
+  - Per-account deployment role and OIDC provider in bootstrap.
+
+No EC2, ECS, EKS, RDS, VPC, or NAT Gateway is included. Do not add one without a concrete requirement.
+
+
+4. CURRENT APPLICATION IMPLEMENTATION STATUS
+============================================
+Existing AWS implementation includes:
+  - Responsive static frontend with Cognito PKCE sign-in and status refresh.
+  - Form inputs for work date, full clock-in datetime, optional clock-out datetime, sprint
+    tracking/date-times, ticket reference, ChatGPT URL, and pasted conversation transcript.
+  - Cognito-authorized API endpoints for GET/POST/PUT session operations, retry, and
+    confirm-delivered.
+  - Validation, timezone-aware UTC conversion, explicit work date, duration calculation,
+    sprint duration, per-user DynamoDB keying, optimistic versioning and scheduleVersion.
+  - EventBridge one-off clock-out schedule currently fires at the exact clock-out time.
+  - 00:30 fallback currently queries eligible past work-date sessions and processes when due.
+  - Processor has a five-minute lease, bounded retries, Gemini JSON parsing, Teams delivery
+    checks, structured logs, and handling for DELIVERY_UNKNOWN.
+  - Manual retry and user confirmation paths exist for failed/ambiguous Teams delivery.
+  - Completed/safely failed records have TTL metadata (default retention one year in code).
+
+Important gaps versus the new owner requirements:
+  1. Saving clock-in does NOT currently post an immediate Teams clock-in message.
+  2. Current message to Teams is generated report text alone; it does not wrap it with ELEPHANT,
+     clock values, duration, ticket, email, blocker, or the full template.
+  3. Email and blocker are not currently form/API/data fields.
+  4. AWS implementation does NOT retrieve full conversation content from shared ChatGPT URL.
+     It stores URL but requires pasted transcript. It must never scrape private cookies or
+     fabricate when transcript is missing.
+  5. Current missing clock-out fallback is midnight at the end of the work date, not 23:30.
+     Owner's "11:30" is ambiguous and needs confirmation before changing default.
+  6. Current explicit clock-out schedule is at clock-out, not clock-out + 10 minutes after
+     the 00:30 fallback. This new behavior is not implemented.
+  7. Completed entries remain in DynamoDB until TTL cleanup; no atomic archive-to-history and
+     clear-active workflow exists. Current key is PK=USER#{sub}, SK=SESSION#{workDate}.
+  8. Current UI loads by work date; it has no separate active-session-empty/history view.
+  9. Current Gemini prompt requests exactly three paragraphs and forbids "today"/"yesterday";
+     owner sample has "Today's update" label and starts with "Today". Align prompt to approved
+     message contract without copying sample content.
+
+ChatGPT retrieval limit: the legacy Worker has a shared-link HTML preview fetch, but that does
+not prove supported public API retrieval of a complete conversation. Current safe behavior is
+URL as reference + pasted transcript. If retrieval fails/missing, do not send fabricated report.
+
+Teams delivery risk: incoming webhook and DynamoDB do not share a transaction or idempotency
+contract. If Teams accepted a POST but Lambda lost response/state persistence, exactly-once
+delivery cannot be guaranteed. Current processor records DELIVERY_UNKNOWN before external
+side effect and blocks blind automatic retry. Preserve explicit reconciliation/duplicate warning.
+
+
+5. DYNAMODB AND SCHEDULING SAFETY DETAILS
+=========================================
+Current item data includes user/date keys; local and UTC clock times; timezone; URL/transcript;
+ticket; sprint fields/minutes; work minutes; scheduled time; scheduleVersion/version;
+idempotencyKey; status/generationStatus/deliveryStatus; generated report; attempt count;
+delivery attempt/report IDs; lease; error metadata; timestamps; expiresAt; GSI1PK/GSI1SK.
+
+Current schedule payload includes userSub, workDate, trigger, scheduleVersion. Processor loads
+current item from DynamoDB, ignores stale schedule versions, and uses a conditional lease.
+Deleting/updating a schedule is not enough to cancel an already running Lambda; always validate
+latest item and version.
+
+Suggested future active/history design (requires deliberate migration; not current code):
+  - PK=USER#{sub}, SK=ACTIVE for current session.
+  - PK=USER#{sub}, SK=LOG#{workDate}#{sessionId} for durable history.
+  - After confirmed Teams delivery only, transact conditionally on version/status to archive
+    finalized non-transcript fields/report and clear ACTIVE atomically.
+  - Only fallback at 00:30 or post-00:30 scheduled check may execute archive/clear.
+  - Preserve active record for failure or DELIVERY_UNKNOWN. TTL applies only to history after
+    a documented retention period; TTL is not a scheduler.
+
+
+6. TERRAFORM, STATE AND MULTI-ACCOUNT DESIGN
+============================================
+Bootstrap creates:
+  - Account-local GitHub OIDC provider for token.actions.githubusercontent.com, audience
+    sts.amazonaws.com (or reuses existing provider by ARN).
+  - Project/environment GitHub deployment IAM role and explicit policy.
+  - Private, versioned, encrypted Terraform state S3 bucket.
+  - Private, versioned, encrypted Lambda artifacts S3 bucket.
+
+Bootstrap state is local by design; keep it backed up securely and never commit it. Main stack
+uses S3 state and Terraform native lock object at key:
+  <account-id>/<environment>/terraform.tfstate
+and `use_lockfile=true` (Terraform >=1.10). Distinct account/environment keys/buckets prevent
+state collision. Bootstrap must exist before the main backend initializes.
+
+Deployment/runtime roles are separate. The GitHub deployment role manages defined project
+resources and passes only app roles to Lambda/Scheduler where appropriate. Runtime roles are
+limited to their data/secrets/schedules/logs. The role was not made account administrator.
+Some AWS APIs require `Resource="*"` (e.g. CloudFront global control plane, Logs group listing
+and API Gateway log delivery, Cognito domain description); those statements are action-limited.
+Separate accounts are recommended for production isolation. SCPs/boundaries/quotas can still
+block another account.
+
+Account originally used: 596144666648. Region: ap-south-1. Defaults: dev, office-update-dev,
+Asia/Kolkata. Treat these as current dev settings, not hardcoded architecture constants.
+
+
+7. GITHUB SECRETS AND DEPLOYMENT OPERATIONS
+===========================================
+Exact Actions repository secret names:
+  AWS_ACCOUNT_ID     Target 12-digit AWS account.
+  OIDC               Full target account role ARN office-update-dev-github-deploy;
+                     not provider ARN and not IAM user ARN.
+  TF_STATE_BUCKET    Bootstrap output state bucket name for the same account.
+  GEMINI_API_KEY     Gemini API key.
+  TEAMS_WEBHOOK_URL  Existing Teams webhook URL.
+
+No real values are stored in this file. Do not retrieve credentials from old Cloudflare files
+or ask the owner to paste them into chat. Secrets are configured in GitHub Settings > Secrets
+and variables > Actions. Deploy workflow syncs Gemini/Teams secret values into AWS Secrets
+Manager. Frontend config contains only public API/Cognito IDs, never secrets.
+
+Terraform pipeline:
+  GitHub Actions > Terraform > Run workflow > main > select plan/apply/destroy.
+  Destroy requires exact confirmation DESTROY DEV. It removes app resources/data but retains
+  bootstrap state/artifact buckets, OIDC provider and deployment role. Review plans carefully.
+
+App pipeline:
+  After stack apply, GitHub Actions > Deploy application > Run workflow on main. It builds and
+  uploads Lambda ZIPs, updates Lambda code, writes integration secrets, uploads frontend, and
+  invalidates CloudFront. It does not create infrastructure.
+
+Current region/prefix/environment/timezone values are workflow configuration. One repository
+secret set switches one target at a time; simultaneous multiple account deployment should use
+GitHub Environments with isolated secrets and state keys.
+
+
+8. TERRAFORM/APPLY/DESTROY ERRORS AND FIXES MADE
+===============================================
+The many observed failures were mostly specific AWS IAM permissions, not broken state locking.
+The bootstrap deployment policy source was expanded with concrete actions, scoped by app prefix,
+region, and account where AWS supports resource scoping. Important observed errors and remedies:
+
+  - logs:CreateLogGroup -> scoped creation permissions for app Lambda/HTTP API log groups.
+  - cloudfront:CreateResponseHeadersPolicy -> CloudFront response header policy lifecycle.
+  - cognito-idp:SetUserPoolMfaConfig/GetUserPoolMfaConfig -> pool MFA read/write.
+  - dynamodb:UpdateContinuousBackups/DescribeContinuousBackups -> point-in-time recovery
+    enablement/read.
+  - scheduler:ListTagsForResource -> schedule/schedule-group tag inspection.
+  - iam:ListRolePolicies/ListAttachedRolePolicies -> Terraform role policy refresh.
+  - S3 GetBucketAcl/CORS/Website/Accelerate and related reads -> bucket configuration refresh.
+  - secretsmanager:GetResourcePolicy -> secret metadata policy read.
+  - logs:DescribeLogGroups -> read-only global list (AWS requires wildcard resource scope).
+  - API Gateway POST/TagResource -> HTTP API and stage/route/tag operations.
+  - logs:CreateLogDelivery and related APIs -> API Gateway access log delivery configuration.
+  - cognito-idp:DescribeUserPoolDomain -> user pool domain state read, global resource scope.
+  - lambda:GetFunctionCodeSigningConfig -> Lambda refresh inspection.
+  - cloudwatch:ListTagsForResource -> alarm tag inspection.
+  - S3 NoSuchKey while creating Lambda -> pipeline now builds/uploads/verifies packages before
+    Terraform plan/apply. This was artifact ordering, not IAM.
+  - S3 BucketNotEmpty during destroy -> versioned frontend needs all versions removed; confirmed
+    destroy enables `force_destroy` in a preparatory apply and role has ListBucketVersions and
+    DeleteObjectVersion for frontend buckets/objects.
+  - iam:ListInstanceProfilesForRole during destroy -> added role inspection permission.
+  - Partial destroy retry could recreate already removed protected resources -> preparatory
+    destroy step checks `terraform state list` and only targets still-managed resources.
+
+For a new permission failure: identify the exact AWS API action/resource, determine if it is
+needed by Terraform refresh, create/update, deploy, or destroy, add only the needed permission
+to bootstrap/main.tf, apply the bootstrap policy using authorized bootstrap state, then rerun a
+fresh plan. Never attach AdministratorAccess or use broad wildcards merely to silence errors.
+
+Most recent destroy partially removed resources and then failed. Do not assume this code state
+means a fresh destroy already succeeded; inspect current remote run and AWS state read-only.
+
+
+9. WORK HISTORY / GIT COMMITS
+=============================
+Recent relevant commits observed at generation time:
+  09be190 Add important next-agent implementation handoff (imp.md)
+  8ff5ae2 Add work completion and next steps handoff (work-done.md)
+  25f162b Add full application architecture handoff (detailed.md)
+  1793568 Document account bootstrap and deployment setup
+  8784d17 Avoid recreating resources during partial destroy retries
+  8af6d12 Fix versioned bucket and IAM role destruction
+  41e9c34 Remove obsolete workflow files
+  800f1c0 Allow Terraform to read alarm tags
+  846eb6e Add Cognito and Lambda deployment read permissions
+  1bfbfff Ensure Terraform apply has permissions and Lambda packages
+  806c694 Fix deployment permissions and verify Lambda artifacts
+  5675ce8 Add AWS work update application and deploy workflow
+
+Earlier in the conversation, push attempts from the Codex environment failed because its SSH
+runtime lacked a usable GitHub key (`Permission denied (publickey)`). A later Git status showed
+HEAD and origin/main at 09be190, meaning the owner or another process pushed these commits.
+Re-check current refs. The new `work.txt` is not yet committed or pushed.
+
+
+10. CHECKS ALREADY RUN
+======================
+On recent Terraform/documentation changes:
+  - terraform fmt -check -recursive terraform: passed.
+  - terraform -chdir=terraform/bootstrap init -backend=false and validate: passed.
+  - terraform -chdir=terraform/environments/dev validate: passed after initialization.
+  - GitHub workflow YAML parse: passed.
+  - git diff --check: passed for the prior files.
+
+These checks are syntax/configuration checks. They do not prove live AWS permissions in every
+account, the current stack state, end-to-end Cognito/API/DynamoDB/Scheduler behavior, Gemini
+quality, or exactly-once Teams delivery. Application Lambda tests exist and CI workflows invoke
+`npm test`, but there are no full deployed AWS integration tests. Automated external integration
+tests must mock Gemini/Teams or use an explicitly approved test destination; never post real
+work updates during routine tests.
+
+
+11. WHAT TO DO NEXT
+===================
+1. Read `imp.md`, `work-done.md`, `detailed.md`, and Terraform README before coding.
+2. Inspect `git status`, branch/remote, latest GitHub Actions run, and AWS Terraform state.
+   Establish the actual stack after partial destroy. Do not apply/destroy until specifically
+   authorized and target account/environment are confirmed.
+3. Ask the owner to clarify fallback clock-out: 11:30 AM, 23:30 (11:30 PM), or another time;
+   clarify exact clock-in Teams text, email/blocker requirements, and sprint placement in report.
+4. Implement and test the state machine: immediate clock-in message, report template composition,
+   clock-out event semantics, 00:30 recovery, post-00:30 clock-out+10 check, schedule version,
+   conditional lock, ambiguous Teams state, archive/history and active clearing.
+5. Add a safe history/active schema migration strategy; do not silently discard existing records.
+6. Extend UI/API to show active session/status/history, email/blocker fields, null state after
+   archive, and useful error handling.
+7. Update least-privilege runtime/deployment IAM and Terraform only for concrete operations.
+8. Run domain/unit tests with external API mocks; validate Terraform/workflows; then stage in dev
+   only after explicit authorization. Review a fresh plan before apply.
+9. Verify mobile HTTPS login, API ownership, DynamoDB writes, scheduler execution, fallback,
+   Gemini output, Teams status, DLQ, CloudWatch and history. Use a test Teams destination only
+   when authorized.
+10. Compare AWS against retained Cloudflare version and get owner approval before cutover or
+    removing old Cloudflare files/resources.
+11. Update imp.md, work-done.md, detailed.md and this file after substantive changes.
+
+
+12. COST AND SAFETY
+===================
+This is a low-idle-cost serverless design, not guaranteed free. Possible charges include S3,
+CloudFront transfer/requests, API Gateway, Lambda, DynamoDB/PITR, EventBridge, Cognito, Secrets
+Manager, CloudWatch logs/alarms, artifact/state storage, and Gemini API usage. Check current AWS
+pricing in the selected region.
+
+Security rules:
+  - Never put Gemini/Teams secrets in code, Terraform vars, frontend config, logs, or this file.
+  - Never grant permanent AWS credentials to GitHub; use OIDC short-lived role sessions.
+  - Keep Cognito authorization on every protected route and key all records by authenticated sub.
+  - Keep logs structured and omit transcripts, generated report where unnecessary, API keys,
+    tokens, and webhook URL.
+  - Never fabricate report text on missing/failed transcript retrieval.
+  - Do not claim exactly-once delivery with a Teams webhook; retain ambiguity handling.
+  - Do not let an obsolete schedule or concurrent fallback process stale session values.
+  - Do not remove Cloudflare resources or apply/destroy AWS without explicit current authorization.
+
+END OF CHAT/PROJECT SUMMARY
